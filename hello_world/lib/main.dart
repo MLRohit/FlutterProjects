@@ -1,5 +1,7 @@
 // import 'dart:ffi';
 
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:hello_world/favor.dart';
 import 'package:hello_world/friend.dart';
@@ -8,6 +10,7 @@ import 'package:flutter/services.dart';
 // import 'package:datetime_picker_formfield/datetime_picker_formfield.dart';
 import 'package:datetime_picker_formfield_new/datetime_picker_formfield.dart';
 import 'package:intl/intl.dart';
+import 'package:hello_world/app_theme.dart';
 
 void main() {
   runApp(const MyApp());
@@ -18,10 +21,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
+    return MaterialApp(
+      theme: lightTheme,
       debugShowCheckedModeBanner: false,
       title: 'Flutter Demo',
-      home: FavorsPage(),
+      home: const FavorsPage(),
     );
   }
 }
@@ -98,6 +102,7 @@ class _FavorsPageState extends State<FavorsPage> {
           ],
         ),
         floatingActionButton: FloatingActionButton(
+          heroTag: 'request_favor',
           onPressed: () {
             Navigator.of(context).push(
               MaterialPageRoute(
@@ -121,6 +126,8 @@ Widget _buildCategoryTab(String title) {
   );
 }
 
+const kFavorCardMaxWidth = 450.0;
+
 class FavorsList extends StatelessWidget {
   final String title;
   final List<Favor> favors;
@@ -141,16 +148,54 @@ class FavorsList extends StatelessWidget {
           child: Text(title),
         ),
         Expanded(
-          child: ListView.builder(
-            physics: const BouncingScrollPhysics(),
-            itemCount: favors.length,
-            itemBuilder: (BuildContext context, int index) {
-              final favor = favors[index];
-              return FavorCardItem(favor: favor);
-            },
-          ),
+          child: _buildCardsList(context),
         ),
       ],
+    );
+  }
+
+  Widget _buildCardsList(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final cardsPerRow = max(screenWidth ~/ kFavorCardMaxWidth, 1);
+    // max() function from dart:math package
+    if (screenWidth > 400) {
+      return GridView.builder(
+        physics: const BouncingScrollPhysics(),
+        itemCount: favors.length,
+        scrollDirection: Axis.vertical,
+        itemBuilder: (BuildContext context, int index) {
+          final favor = favors[index];
+          return FavorCardItem(favor: favor);
+        },
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          childAspectRatio: 2.8,
+          crossAxisCount: cardsPerRow,
+        ),
+      );
+    }
+    return ListView.builder(
+      physics: const BouncingScrollPhysics(),
+      itemCount: favors.length,
+      itemBuilder: (BuildContext context, int index) {
+        final favor = favors[index];
+        return InkWell(
+          onTap: () {
+            Navigator.push(
+              context,
+              PageRouteBuilder(
+                pageBuilder: (
+                  _,
+                  __,
+                  ___,
+                ) {
+                  return _FavorDetailsPage(favor: favor);
+                },
+              ),
+            );
+          },
+          child: FavorCardItem(favor: favor),
+        );
+      },
     );
   }
 }
@@ -173,7 +218,10 @@ class FavorCardItem extends StatelessWidget {
         child: Column(
           children: <Widget>[
             _itemHeader(favor),
-            Text(favor.description ?? ""),
+            Hero(
+              tag: 'description_${favor.uuid}',
+              child: Text(favor.description ?? ""),
+            ),
             _itemFooter(favor, context)
           ],
         ),
@@ -235,23 +283,26 @@ class FavorCardItem extends StatelessWidget {
 
     return Container();
   }
+}
 
-  Widget _itemHeader(Favor favor) {
-    return Row(
-      children: <Widget>[
-        CircleAvatar(
+Widget _itemHeader(Favor favor) {
+  return Row(
+    children: <Widget>[
+      Hero(
+        tag: 'avatar_${favor.uuid}',
+        child: CircleAvatar(
           backgroundImage: NetworkImage(
             favor.friend?.photoURL ?? "",
           ),
         ),
-        Expanded(
-          child: Padding(
-              padding: const EdgeInsets.only(left: 8.0),
-              child: Text("${favor.friend?.name ?? ""} asked you to... ")),
-        )
-      ],
-    );
-  }
+      ),
+      Expanded(
+        child: Padding(
+            padding: const EdgeInsets.only(left: 8.0),
+            child: Text("${favor.friend?.name ?? ""} asked you to... ")),
+      )
+    ],
+  );
 }
 
 class RequestFavorPage extends StatefulWidget {
@@ -275,114 +326,117 @@ class RequestFavorPageState extends State<RequestFavorPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text("Requesting a favor"),
-        leading: const CloseButton(),
-        actions: <Widget>[
-          Builder(
-            builder: (context) => ElevatedButton(
-              child: const Text("SAVE"),
-              onPressed: () {
-                RequestFavorPageState.of(context).save();
-              },
+    return Hero(
+      tag: "request_favor",
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text("Requesting a favor"),
+          leading: const CloseButton(),
+          actions: <Widget>[
+            Builder(
+              builder: (context) => ElevatedButton(
+                child: const Text("SAVE"),
+                onPressed: () {
+                  RequestFavorPageState.of(context).save();
+                },
+              ),
             ),
-          ),
-        ],
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              DropdownButtonFormField<Friend>(
-                value: _selectedFriend,
-                onChanged: (friend) {
-                  setState(() {
-                    _selectedFriend = friend;
-                  });
-                },
-                items: widget.friends!
-                    .map(
-                      (f) => DropdownMenuItem<Friend>(
-                        value: f,
-                        child: Text(f.name ?? ""),
-                      ),
-                    )
-                    .toList(),
-                validator: (friend) {
-                  if (friend == null) {
-                    return "You must select a friend to ask the favor";
-                  }
-                  return null;
-                },
-              ),
-              Container(
-                height: 16.0,
-              ),
-              const Text("Favor description:"),
-              TextFormField(
-                maxLines: 5,
-                inputFormatters: [LengthLimitingTextInputFormatter(200)],
-                validator: (value) {
-                  if (value?.isEmpty ?? false) {
-                    return "You must detail the favor";
-                  }
-                  return null;
-                },
-              ),
-              Container(
-                height: 16.0,
-              ),
-              const Text("Due Date:"),
-              // DateTimePickerFormField(
-              //   inputType: InputType.both,
-              //   format: DateFormat("EEEE, MMMM d, yyyy 'at' h:mma"),
-              //   editable: false,
-              //   decoration: InputDecoration(
-              //       labelText: 'Date/Time', hasFloatingPlaceholder: false),
-              //   validator: (dateTime) {
-              //     if (dateTime == null) {
-              //       return "You must select a due date time for the favor";
-              //     }
-              //     return null;
-              //   },
-              // ),
-              DateTimeField(
-                decoration: const InputDecoration(labelText: 'Date/Time'),
-                format: DateFormat("yyyy-MM-dd HH:mm"),
-                onShowPicker: (context, currentValue) async {
-                  return await showDatePicker(
-                    context: context,
-                    firstDate: DateTime(1900),
-                    initialDate: currentValue ?? DateTime.now(),
-                    lastDate: DateTime(2100),
-                  ).then(
-                    (DateTime? date) async {
-                      if (date != null) {
-                        final time = await showTimePicker(
-                          context: context,
-                          initialTime: TimeOfDay.fromDateTime(
-                              currentValue ?? DateTime.now()),
-                        );
-                        return DateTimeField.combine(date, time);
-                      } else {
-                        return currentValue;
-                      }
-                    },
-                  );
-                },
-                validator: (dateTime) {
-                  if (dateTime == null) {
-                    return "You must select a due date time for the favor";
-                  }
-                  return null;
-                },
-              ),
-            ],
+          ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                DropdownButtonFormField<Friend>(
+                  value: _selectedFriend,
+                  onChanged: (friend) {
+                    setState(() {
+                      _selectedFriend = friend;
+                    });
+                  },
+                  items: widget.friends!
+                      .map(
+                        (f) => DropdownMenuItem<Friend>(
+                          value: f,
+                          child: Text(f.name ?? ""),
+                        ),
+                      )
+                      .toList(),
+                  validator: (friend) {
+                    if (friend == null) {
+                      return "You must select a friend to ask the favor";
+                    }
+                    return null;
+                  },
+                ),
+                Container(
+                  height: 16.0,
+                ),
+                const Text("Favor description:"),
+                TextFormField(
+                  maxLines: 5,
+                  inputFormatters: [LengthLimitingTextInputFormatter(200)],
+                  validator: (value) {
+                    if (value?.isEmpty ?? false) {
+                      return "You must detail the favor";
+                    }
+                    return null;
+                  },
+                ),
+                Container(
+                  height: 16.0,
+                ),
+                const Text("Due Date:"),
+                // DateTimePickerFormField(
+                //   inputType: InputType.both,
+                //   format: DateFormat("EEEE, MMMM d, yyyy 'at' h:mma"),
+                //   editable: false,
+                //   decoration: InputDecoration(
+                //       labelText: 'Date/Time', hasFloatingPlaceholder: false),
+                //   validator: (dateTime) {
+                //     if (dateTime == null) {
+                //       return "You must select a due date time for the favor";
+                //     }
+                //     return null;
+                //   },
+                // ),
+                DateTimeField(
+                  decoration: const InputDecoration(labelText: 'Date/Time'),
+                  format: DateFormat("yyyy-MM-dd HH:mm"),
+                  onShowPicker: (context, currentValue) async {
+                    return await showDatePicker(
+                      context: context,
+                      firstDate: DateTime(1900),
+                      initialDate: currentValue ?? DateTime.now(),
+                      lastDate: DateTime(2100),
+                    ).then(
+                      (DateTime? date) async {
+                        if (date != null) {
+                          final time = await showTimePicker(
+                            context: context,
+                            initialTime: TimeOfDay.fromDateTime(
+                                currentValue ?? DateTime.now()),
+                          );
+                          return DateTimeField.combine(date, time);
+                        } else {
+                          return currentValue;
+                        }
+                      },
+                    );
+                  },
+                  validator: (dateTime) {
+                    if (dateTime == null) {
+                      return "You must select a due date time for the favor";
+                    }
+                    return null;
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -394,5 +448,44 @@ class RequestFavorPageState extends State<RequestFavorPage> {
       // store the favor request on firebase
       Navigator.pop(context);
     }
+  }
+}
+
+class _FavorDetailsPage extends StatefulWidget {
+  final Favor favor;
+  const _FavorDetailsPage({Key? key, required this.favor}) : super(key: key);
+
+  @override
+  State<_FavorDetailsPage> createState() => __FavorDetailsPageState();
+}
+
+class __FavorDetailsPageState extends State<_FavorDetailsPage> {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Card(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10.0, horizontal: 25.0),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _itemHeader(widget.favor),
+              Container(height: 16.0),
+              Expanded(
+                child: Center(
+                  child: Hero(
+                    tag: "description_${widget.favor.uuid}",
+                    child: Text(
+                      widget.favor.description ?? "",
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
